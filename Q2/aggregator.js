@@ -1,8 +1,8 @@
 const ecomAMZ = require('./ecomAMZ');
 const ecomSLP = require('./ecomSLP');
 const ecomSNP = require('./ecomSNP');
-const ecomMYN = require('./ecommerceMYN');
-const ecomAZO = require('./ecommerceAZO');
+const ecomMYN = require('./ecomMYN');
+const ecomAZO = require('./ecomAZO');
 
 const VALID_CATEGORIES = [
     'Phone', 'Computer', 'TV', 'Earphone', 'Tablet', 'Charger',

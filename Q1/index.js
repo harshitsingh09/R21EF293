@@ -2,113 +2,83 @@ const express = require('express');
 const axios = require('axios');
 
 const app = express();
-const port = 9876;
-
-// Configuration
+const PORT = 9876;
 const WINDOW_SIZE = 10;
-const SERVER_URLS = {
-  'p': 'http://20.244.56.144/test/primes',
-  'f': 'http://20.244.56.144/test/fibo',
-  'e': 'http://20.244.56.144/test/even',
-  'r': 'http://20.244.56.144/test/rand'
+const NUMBERS_URL = "http://20.244.56.144/test/";  
+const BEARER_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJNYXBDbGFpbXMiOnsiZXhwIjoxNzIwNjgxNjYwLCJpYXQiOjE3MjA2ODEzNjAsImlzcyI6IkFmZm9yZG1lZCIsImp0aSI6IjQyZTI3OGVkLTJiMzYtNDkxYS05M2M5LTQ2MzhmNDFhNzg2MSIsInN1YiI6IjIxMTAyMjNAcmV2YS5lZHUuaW4ifSwiY29tcGFueU5hbWUiOiJnb01hcnQiLCJjbGllbnRJRCI6IjQyZTI3OGVkLTJiMzYtNDkxYS05M2M5LTQ2MzhmNDFhNzg2MSIsImNsaWVudFNlY3JldCI6Ik9UU2tBV1dIVWlWSHV5a3UiLCJvd25lck5hbWUiOiJIYXJzaGl0IFNpbmdoIiwib3duZXJFbWFpbCI6IjIxMTAyMjNAcmV2YS5lZHUuaW4iLCJyb2xsTm8iOiJSMjFFRjI5MyJ9.EMd9YG4unY5YYu1bja--Nh8wJCmrjlQoLEjVMYRLm2c";  
+
+const numberWindows = {
+  'p': [],
+  'f': [],
+  'e': [],
+  'r': []
 };
 
-// State
-let window = [];
-const lock = {};
+const endpoints = {
+  'p': 'primes',
+  'f': 'fibo',
+  'e': 'even',   
+  'r': 'random' 
+};
 
-// Fetch numbers from the test server
-async function fetchNumbers(numberType) {
-  const url = SERVER_URLS[numberType];
-  if (!url) {
-    console.log(`Invalid number type: ${numberType}`);
-    return [];
-  }
-
+async function fetchNumbers(endpoint) {
   try {
-    console.log(`Fetching numbers from: ${url}`);
-    const response = await axios.get(url, { timeout: 500 });
-    if (response.status === 200) {
-      console.log(`Received data: ${JSON.stringify(response.data)}`);
-      return response.data.numbers || [];
-    }
+    const response = await axios.get(NUMBERS_URL + endpoint, {
+      headers: {
+        'Authorization': `Bearer ${BEARER_TOKEN}`
+      },
+      timeout: 500
+    });
+    console.log(`Fetched numbers from ${endpoint}:`, response.data.numbers);
+    return response.data.numbers || [];
   } catch (error) {
-    console.error(`Error fetching numbers: ${error.message}`);
+    console.error(`Error fetching numbers from ${endpoint}:`, error.message);
     return [];
   }
-
-  return [];
 }
 
-// Calculate the average of the current window
-function calculateAverage(numbers) {
-  if (numbers.length === 0) {
-    return 0;
-  }
-  const sum = numbers.reduce((acc, val) => acc + val, 0);
-  return sum / numbers.length;
-}
-
-app.get('/numbers/:numberType', async (req, res) => {
-  const startTime = Date.now();
-  const numberType = req.params.numberType;
-  console.log(`Received request for number type: ${numberType}`);
-
-  const newNumbers = await fetchNumbers(numberType);
-  console.log(`Fetched new numbers: ${newNumbers}`);
-
-  // Use a lock to ensure thread-safe updates to the window
-  if (!lock[numberType]) {
-    lock[numberType] = true;
-
-    try {
-      const prevWindow = [...window];
-      console.log(`Previous window state: ${prevWindow}`);
-
-      // Add unique new numbers to the window
-      newNumbers.forEach(number => {
-        if (!window.includes(number)) {
-          if (window.length >= WINDOW_SIZE) {
-            window.shift();
-          }
-          window.push(number);
-        }
-      });
-
-      const currentWindow = [...window];
-      console.log(`Current window state: ${currentWindow}`);
-      const avg = calculateAverage(currentWindow);
-      console.log(`Calculated average: ${avg}`);
-
-      const elapsedTime = Date.now() - startTime;
-      if (elapsedTime > 500) {
-        console.log('Request took too long, returning previous state');
-        res.json({
-          numbers: [],
-          windowPrevState: prevWindow,
-          windowCurrState: prevWindow,
-          avg: calculateAverage(prevWindow)
-        });
-      } else {
-        res.json({
-          numbers: newNumbers,
-          windowPrevState: prevWindow,
-          windowCurrState: currentWindow,
-          avg: avg
-        });
+function updateWindow(numberId, newNumbers) {
+  const window = numberWindows[numberId];
+  const prevState = [...window];
+  
+  newNumbers.forEach(num => {
+    if (!window.includes(num)) {
+      if (window.length >= WINDOW_SIZE) {
+        window.shift();
       }
-    } finally {
-      lock[numberType] = false;
+      window.push(num);
     }
-  } else {
-    res.status(503).send('Service Unavailable');
+  });
+
+  const avg = window.length ? window.reduce((a, b) => a + b, 0) / window.length : 0;
+  return { prevState, currState: window, avg };
+}
+
+app.get('/numbers/:numberId', async (req, res) => {
+  const { numberId } = req.params;
+
+  if (!numberWindows.hasOwnProperty(numberId) || !endpoints[numberId]) {
+    return res.status(400).json({ error: "Invalid number ID" });
   }
+
+  const newNumbers = await fetchNumbers(endpoints[numberId]);
+  const { prevState, currState, avg } = updateWindow(numberId, newNumbers);
+
+  console.log({
+    numbers: newNumbers,
+    windowPrevState: prevState,
+    windowCurrState: currState,
+    avg: avg
+  });
+
+  res.json({
+    numbers: newNumbers,
+    windowPrevState: prevState,
+    windowCurrState: currState,
+    avg: avg
+  });
 });
 
-app.get('*', (req, res) => {
-  res.status(404).send('Endpoint not found');
-});
-
-app.listen(port, () => {
-  console.log(`Average Calculator microservice running on http://localhost:${port}`);
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
