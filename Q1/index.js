@@ -21,15 +21,19 @@ const lock = {};
 async function fetchNumbers(numberType) {
   const url = SERVER_URLS[numberType];
   if (!url) {
+    console.log(`Invalid number type: ${numberType}`);
     return [];
   }
 
   try {
+    console.log(`Fetching numbers from: ${url}`);
     const response = await axios.get(url, { timeout: 500 });
     if (response.status === 200) {
+      console.log(`Received data: ${JSON.stringify(response.data)}`);
       return response.data.numbers || [];
     }
   } catch (error) {
+    console.error(`Error fetching numbers: ${error.message}`);
     return [];
   }
 
@@ -48,7 +52,10 @@ function calculateAverage(numbers) {
 app.get('/numbers/:numberType', async (req, res) => {
   const startTime = Date.now();
   const numberType = req.params.numberType;
+  console.log(`Received request for number type: ${numberType}`);
+
   const newNumbers = await fetchNumbers(numberType);
+  console.log(`Fetched new numbers: ${newNumbers}`);
 
   // Use a lock to ensure thread-safe updates to the window
   if (!lock[numberType]) {
@@ -56,6 +63,7 @@ app.get('/numbers/:numberType', async (req, res) => {
 
     try {
       const prevWindow = [...window];
+      console.log(`Previous window state: ${prevWindow}`);
 
       // Add unique new numbers to the window
       newNumbers.forEach(number => {
@@ -68,10 +76,13 @@ app.get('/numbers/:numberType', async (req, res) => {
       });
 
       const currentWindow = [...window];
+      console.log(`Current window state: ${currentWindow}`);
       const avg = calculateAverage(currentWindow);
+      console.log(`Calculated average: ${avg}`);
 
       const elapsedTime = Date.now() - startTime;
       if (elapsedTime > 500) {
+        console.log('Request took too long, returning previous state');
         res.json({
           numbers: [],
           windowPrevState: prevWindow,
@@ -89,7 +100,13 @@ app.get('/numbers/:numberType', async (req, res) => {
     } finally {
       lock[numberType] = false;
     }
+  } else {
+    res.status(503).send('Service Unavailable');
   }
+});
+
+app.get('*', (req, res) => {
+  res.status(404).send('Endpoint not found');
 });
 
 app.listen(port, () => {
